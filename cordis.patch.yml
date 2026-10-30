@@ -1,0 +1,4 @@
+- insert:
+    - id: voice-input-with-press
+      name: dsh-plugin-voiceinputwithpress
+      config: {}

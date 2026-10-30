@@ -1,0 +1,24 @@
+{
+  "name": "dsh-plugin-voiceinputwithpress",
+  "version": "0.1.8",
+  "description": "Press and hold the DSH composer to dictate and send",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": ["index.js", "client.js", "src", "cordis.patch.yml", "locale", "README.md"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "platform": "web" }
+  },
+  "scripts": { "build": "node scripts/build.js", "test": "node --test --test-isolation=none test/*.test.js" },
+  "repository": { "type": "git", "url": "git+https://github.com/rapidrabbitsliu/dsh-plugin-voiceinputwithpress.git" },
+  "homepage": "https://github.com/rapidrabbitsliu/dsh-plugin-voiceinputwithpress#readme",
+  "bugs": { "url": "https://github.com/rapidrabbitsliu/dsh-plugin-voiceinputwithpress/issues" },
+  "keywords": ["dsh", "deepseek-harness", "voice-input", "press-to-talk"],
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "license": "MIT"
+}
