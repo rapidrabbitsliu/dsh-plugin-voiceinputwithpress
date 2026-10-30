@@ -63,6 +63,9 @@ function install(doc = document) {
   }
   const cancel = r => {
     r.cancelled = true; r.safe = false
+    r.visual?.dispose()
+    // UI cancellation can wait for React; native editing must never wait.
+    unlockSelection(r)
     const row = r.card.querySelector('[data-voice-activity]')
     if (row) { button(row, LABELS.cancel)?.click(); clear() }
     else if (!r.observer || !live(r)) clear()
@@ -116,10 +119,13 @@ function install(doc = document) {
     const empty = !!card.querySelector('[data-composer-placeholder]') && !input.textContent && !input.querySelector('[data-composer-chip], [data-composer-command], [contenteditable="false"]')
     if (!empty) return
     const r = run = { input, card, session, sessionId: session.getAttribute('data-conversation-session'), id: e.pointerId, x: e.clientX, y: e.clientY, safe: empty, released: false, stopped: false, sawActive: false, sawTranscribing: false, inserted: false, cancelled: false }
-    // Suppress native selection before Safari's long-press recognizer starts.
-    input.setAttribute?.('data-press-gesture', '')
-    r.selectionLocked = true
-    doc.documentElement?.setAttribute('data-press-selection-lock', '')
+    // Safari's prevention must not intercept desktop mousedown/caret focus.
+    r.pointerType = e.pointerType
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+      input.setAttribute?.('data-press-gesture', '')
+      r.selectionLocked = true
+      doc.documentElement?.setAttribute('data-press-selection-lock', '')
+    }
     r.lastText = input.textContent
     r.attachments = attachmentMarkup(r)
     if (r.attachments === null) r.safe = false
@@ -157,6 +163,8 @@ function install(doc = document) {
   }
   function pointerMove(e) {
     const r = run; if (!r || e.pointerId !== r.id) return
+    // Recover a mouse release outside the document before it becomes a stale hold.
+    if (r.pointerType === 'mouse' && e.buttons === 0 && !r.released) { cancel(r); return }
     if (!r.observer) {
       if (Math.hypot(e.clientX - r.x, e.clientY - r.y) > MOVE_PX) clear()
       return
@@ -171,9 +179,9 @@ function install(doc = document) {
     r.released = true
     unlockSelection(r)
     if (!r.observer) {
-      const focus = r.nativeTouchBlocked
+      const focus = r.nativeTouchBlocked || r.pointerType === 'mouse'
       clear()
-      if (focus) r.input.focus?.({ preventScroll: true })
+      if (focus && live(r) && doc.activeElement !== r.input && (e.target === r.input || r.input.contains(e.target))) r.input.focus?.({ preventScroll: true })
       return
     }
     if (r.armed) { cancel(r); return }

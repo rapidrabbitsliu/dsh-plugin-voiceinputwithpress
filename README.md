@@ -11,7 +11,7 @@ Safari 麦克风授权由浏览器控制，本插件不能绕过。可尝试在�
 通过 DSH 插件管理器安装 `dsh-plugin-voiceinputwithpress`，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add dsh-plugin-voiceinputwithpress@0.1.8
+dsh plugin --profile <profile> add dsh-plugin-voiceinputwithpress@0.1.9
 ```
 
 从源码开发安装：
@@ -31,7 +31,7 @@ dsh plugin --profile <profile> add file:/absolute/path/to/dsh-plugin-voiceinputw
 
 ## 开发验证
 
-`npm run build` 生成 DSH 模块加载器使用的 `client.js`。`npm test` 运行 14 项轻量 DOM 模拟测试，不替代实际浏览器与麦克风验证。源码无需运行时第三方依赖，图形由 CSS/SVG 绘制，不包含外部图片或模型。代码 MIT 许可。
+`npm run build` 生成 DSH 模块加载器使用的 `client.js`。`npm test` 运行 17 项轻量 DOM 模拟测试，不替代实际浏览器与麦克风验证。源码无需运行时第三方依赖，图形由 CSS/SVG 绘制，不包含外部图片或模型。代码 MIT 许可。
 
 开发时按 DSH 源码版本 `0.2.1-rc.3` 的页面契约适配；用户已在 iOS Safari 参与手动测试，但最新版本全流程和 PC 麦克风录音未独立完整验收，不承诺其他 DSH 版本兼容。
 

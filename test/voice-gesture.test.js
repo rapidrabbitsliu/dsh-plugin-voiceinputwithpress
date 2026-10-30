@@ -60,6 +60,8 @@ function fixture({ empty = true } = {}) {
     disconnect() { observers.delete(this) }
   }
   const doc = new Target(), win = new Target()
+  const attrs = new Map()
+  doc.documentElement = { setAttribute(k,v) { attrs.set(k,v) }, removeAttribute(k) { attrs.delete(k) }, hasAttribute(k) {return attrs.has(k)} }
   doc.hidden = false; doc.defaultView = win; win.Element = Element; win.Node = { DOCUMENT_POSITION_FOLLOWING: 4 }; win.MutationObserver = MutationObserver
   const session = new Element('session'); session.sessionId = 'one'
   const card = new Element('card', session), overlay = new Element('overlay', card), scroll = new Element('scroll', card), input = new Element('input', scroll), placeholder = new Element('placeholder', scroll), chip = new Element('chip', input)
@@ -81,6 +83,35 @@ function fixture({ empty = true } = {}) {
 
 function begin(f) { f.pointer('pointerdown'); f.tick(500) }
 function complete(f, text = 'hello') { f.phase('recording'); f.pointer('pointerup'); f.insert(text); f.phase('idle'); f.tick(100) }
+
+test('desktop short click never locks selection and recovers missing focus only', () => {
+  const f=fixture(); let focused=0, prevented=0
+  f.input.focus=()=>{focused++; f.doc.activeElement=f.input}
+  for(let i=0;i<20;i++) {
+    f.pointer('pointerdown',{pointerType:'mouse',buttons:1})
+    assert.equal(f.doc.documentElement.hasAttribute('data-press-selection-lock'),false)
+    f.doc.emit('selectstart',{target:f.input,preventDefault(){prevented++}})
+    f.pointer('pointerup',{pointerType:'mouse',buttons:0})
+  }
+  assert.equal(prevented,0); assert.equal(focused,1); f.dispose()
+})
+
+test('cancel unlocks immediately even when requesting UI has not committed', () => {
+  const f=fixture(); f.start.onClick=()=>{}; begin(f)
+  assert.equal(f.doc.documentElement.hasAttribute('data-press-selection-lock'),true)
+  f.win.emit('blur')
+  assert.equal(f.doc.documentElement.hasAttribute('data-press-selection-lock'),false)
+  f.phase('requesting'); assert.equal(f.cancel.clicks,1); f.dispose()
+})
+
+test('mouse release outside document recovers on next buttonless move', () => {
+  const f=fixture()
+  f.pointer('pointerdown',{pointerType:'mouse',buttons:1})
+  f.pointer('pointermove',{pointerType:'mouse',buttons:0})
+  f.tick(600); assert.equal(f.start.clicks || 0,0)
+  f.pointer('pointerdown',{pointerType:'mouse',buttons:1}); f.tick(500)
+  assert.equal(f.start.clicks,1); f.dispose()
+})
 
 test('native touch magnifier is blocked, short tap restores editing focus', () => {
   const f = fixture(); let prevented = 0, focused = 0
