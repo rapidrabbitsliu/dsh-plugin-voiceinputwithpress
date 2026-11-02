@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 
 // A small deterministic DOM model: it exercises the adapter, not browser/React integration.
-function fixture({ empty = true } = {}) {
+function fixture({ empty = true, preferences = {} } = {}) {
   let now = 0, next = 1
   const timers = new Map(), observers = new Set()
   const setTimeout = (fn, delay) => { const id = next++; timers.set(id, { fn, at: now + delay }); return id }
@@ -32,6 +32,7 @@ function fixture({ empty = true } = {}) {
     contains(other) { for (let p = other; p; p = p.parent) if (p === this) return true; return false }
     closest(selector) {
       for (let p = this; p; p = p.parent) {
+        if (selector === 'button[aria-label]' && p.kind === 'button') return p
         if (selector.startsWith('[data-composer-input]') && p.kind === 'input') return p
         if (selector === '[data-composer-card]' && p.kind === 'card') return p
         if (selector === '[data-conversation-session]' && p.kind === 'session') return p
@@ -40,6 +41,7 @@ function fixture({ empty = true } = {}) {
     }
     getAttribute(name) { if (name === 'aria-label') return this.label; if (name === 'data-voice-activity') return this.activity; if (name === 'data-conversation-session') return this.sessionId; return null }
     querySelector(selector) {
+      if (selector === '[data-composer-input][contenteditable="true"]') return this.kind === 'card' ? input : null
       if (selector === '[data-voice-activity]') return this.kind === 'card' ? row : null
       if (selector === '[data-input-scroll]') return this.kind === 'card' ? scroll : null
       if (selector === '[data-composer-placeholder]') return this.kind === 'card' && empty ? placeholder : null
@@ -52,7 +54,11 @@ function fixture({ empty = true } = {}) {
       if (this.kind === 'row') return [cancel, ...(row.activity === 'recording' ? [stop] : [])]
       return []
     }
-    click() { this.clicks = (this.clicks || 0) + 1; this.onClick?.() }
+    click() {
+      let blocked = false
+      doc.emit('click', { target: this, preventDefault() { blocked = true }, stopImmediatePropagation() { blocked = true } })
+      if (!blocked) { this.clicks = (this.clicks || 0) + 1; this.onClick?.() }
+    }
   }
   class MutationObserver {
     constructor(callback) { this.callback = callback }
@@ -75,14 +81,32 @@ function fixture({ empty = true } = {}) {
   cancel.onClick = () => phase('idle')
   const exports = {}
   vm.runInNewContext(readFileSync(new URL('../src/client.js', import.meta.url), 'utf8'), { exports, require: () => ({ createVisual: () => ({ update() {}, dispose() {} }) }), setTimeout, clearTimeout, Math })
-  const dispose = exports.install(doc)
-  const pointer = (type, changes = {}) => doc.emit(type, { target: input, isPrimary: true, pointerType: 'touch', button: 0, pointerId: 1, clientX: 100, clientY: 100, ...changes })
+  let preferencesChanged
+  const dispose = exports.install(doc, () => {}, () => preferences, listener => { preferencesChanged = listener; return () => { preferencesChanged = null } })
+  const configure = patch => { Object.assign(preferences, patch); preferencesChanged?.() }
+  const pointer = (type, changes = {}) => doc.emit(type, { target: start, isPrimary: true, pointerType: 'touch', button: 0, pointerId: 1, clientX: 100, clientY: 100, ...changes })
   const insert = text => { input.textContent = text; mutate(input) }
-  return { doc, win, input, card, session, start, stop, cancel, send, pointer, phase, insert, tick, dispose, timers, observers }
+  return { doc, win, input, card, session, start, stop, cancel, send, pointer, phase, insert, tick, dispose, timers, observers, configure }
 }
 
 function begin(f) { f.pointer('pointerdown'); f.tick(500) }
 function complete(f, text = 'hello') { f.phase('recording'); f.pointer('pointerup'); f.insert(text); f.phase('idle'); f.tick(100) }
+
+test('settings can disable long press and restore native UI without intercepting touch', () => {
+  const f = fixture({ preferences: { pressEnabled: false } })
+  assert.equal(f.doc.documentElement.hasAttribute('data-press-enabled'), false)
+  f.pointer('pointerdown'); f.tick(2000)
+  assert.equal(f.start.clicks || 0, 0)
+  assert.equal(f.doc.documentElement.hasAttribute('data-press-selection-lock'), false)
+  f.configure({ pressEnabled: true, holdMs: 900 })
+  assert.equal(f.doc.documentElement.hasAttribute('data-press-enabled'), true)
+  f.pointer('pointerdown'); f.tick(899)
+  assert.equal(f.start.clicks || 0, 0)
+  f.tick(1); assert.equal(f.start.clicks, 1)
+  f.configure({ pressEnabled: false })
+  assert.equal(f.cancel.clicks, 1)
+  f.dispose(); assert.equal(f.doc.documentElement.hasAttribute('data-press-enabled'), false)
+})
 
 test('desktop short click never locks selection and recovers missing focus only', () => {
   const f=fixture(); let focused=0, prevented=0
@@ -93,7 +117,7 @@ test('desktop short click never locks selection and recovers missing focus only'
     f.doc.emit('selectstart',{target:f.input,preventDefault(){prevented++}})
     f.pointer('pointerup',{pointerType:'mouse',buttons:0})
   }
-  assert.equal(prevented,0); assert.equal(focused,1); f.dispose()
+  assert.equal(prevented,0); assert.equal(focused,0); f.dispose()
 })
 
 test('cancel unlocks immediately even when requesting UI has not committed', () => {
@@ -113,14 +137,25 @@ test('mouse release outside document recovers on next buttonless move', () => {
   assert.equal(f.start.clicks,1); f.dispose()
 })
 
-test('native touch magnifier is blocked, short tap restores editing focus', () => {
-  const f = fixture(); let prevented = 0, focused = 0
-  f.input.focus = () => focused++
+test('empty input long press, touch and paste selection remain completely native', () => {
+  const f = fixture(); let prevented = 0
+  f.pointer('pointerdown', { target: f.input })
+  for (const type of ['touchstart', 'touchmove', 'selectstart', 'contextmenu']) f.doc.emit(type, { target: f.input, cancelable: true, preventDefault() { prevented++ } })
+  f.tick(2000); f.pointer('pointerup', { target: f.input })
+  assert.equal(prevented, 0); assert.equal(f.start.clicks || 0, 0)
+  assert.equal(f.doc.documentElement.hasAttribute('data-press-selection-lock'), false)
+  f.dispose()
+})
+
+test('mic short tap leaves touchstart and native click untouched', () => {
+  const f = fixture(); let prevented = 0, stopped = 0
   f.pointer('pointerdown')
-  f.doc.emit('touchstart', {target:f.input,cancelable:true,preventDefault(){prevented++}})
-  assert.equal(prevented,1)
-  f.pointer('pointerup'); assert.equal(focused,1)
-  assert.equal(f.start.clicks || 0,0); f.dispose()
+  f.doc.emit('touchstart', { target: f.start, cancelable: true, preventDefault() { prevented++ } })
+  f.pointer('pointerup')
+  f.doc.emit('click', { target: f.start, preventDefault() { prevented++ }, stopImmediatePropagation() { stopped++ } })
+  assert.equal(prevented, 0); assert.equal(stopped, 0)
+  f.start.click(); assert.equal(f.start.clicks, 1)
+  f.dispose()
 })
 
 test('any existing text leaves long press and touch defaults to the editor', () => {
@@ -131,6 +166,42 @@ test('any existing text leaves long press and touch defaults to the editor', () 
     f.tick(700)
     assert.equal(f.start.clicks || 0,0); assert.equal(prevented,0); f.dispose()
   }
+})
+
+test('held mic start is not swallowed, release suppresses only its compatibility click', () => {
+  const f = fixture(); let releasedCapture
+  f.start.releasePointerCapture = id => { releasedCapture = id }
+  begin(f)
+  assert.equal(releasedCapture, 1)
+  assert.equal(f.start.clicks, 1) // our .click bypasses capture suppression
+  f.pointer('pointerup')
+  f.start.click(); assert.equal(f.start.clicks, 1)
+  f.phase('recording'); f.insert('voice'); f.phase('idle'); f.tick(100)
+  assert.equal(f.send.clicks, 1)
+  // A new intentional gesture must not inherit the previous suppression.
+  f.input.textContent = ''; f.pointer('pointerdown'); f.pointer('pointerup')
+  f.start.click(); assert.equal(f.start.clicks, 2)
+  f.dispose()
+})
+
+test('cancel and blur suppress late native mic click but never another button; expiry is bounded', () => {
+  for (const reason of ['pointercancel', 'blur']) {
+    const f = fixture(); begin(f)
+    if (reason === 'blur') f.win.emit('blur'); else f.pointer(reason)
+    f.send.click(); assert.equal(f.send.clicks, 1)
+    f.start.click(); assert.equal(f.start.clicks, 1)
+    f.tick(1600); f.start.click(); assert.equal(f.start.clicks, 2)
+    f.dispose()
+  }
+})
+
+test('filled draft mic keeps native click/transcript insertion and never auto-sends', () => {
+  const f = fixture({ empty: false }); f.input.textContent = 'draft'
+  f.pointer('pointerdown'); f.tick(1000); f.pointer('pointerup')
+  assert.equal(f.start.clicks || 0, 0)
+  f.start.click(); assert.equal(f.start.clicks, 1)
+  f.phase('recording'); f.phase('transcribing'); f.insert('draft plus voice'); f.phase('idle'); f.tick(200)
+  assert.equal(f.send.clicks || 0, 0); f.dispose()
 })
 
 test('short press and movement before hold never start recording', () => {

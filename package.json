@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-voiceinputwithpress",
-  "version": "0.1.9",
-  "description": "Press and hold the DSH composer to dictate and send",
+  "version": "0.1.10",
+  "description": "Hold the DSH microphone to dictate and send, with reply readout",
   "type": "module",
   "exports": {
     ".": "./index.js",
@@ -9,10 +9,20 @@
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
-  "files": ["index.js", "client.js", "src", "cordis.patch.yml", "locale", "README.md"],
+  "files": ["index.js", "client.js", "src/client.js", "src/visual.js", "src/readout-client.js", "src/readout-indicator.js", "src/readout-text.js", "src/tts-host.js", "scripts/tts-worker.py", "scripts/tts_english.py", "scripts/tts-requirements.txt", "cordis.patch.yml", "locale", "README.md"],
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
-    "client": { "platform": "web" }
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
   },
   "scripts": { "build": "node scripts/build.js", "test": "node --test --test-isolation=none test/*.test.js" },
   "repository": { "type": "git", "url": "git+https://github.com/rapidrabbitsliu/dsh-plugin-voiceinputwithpress.git" },

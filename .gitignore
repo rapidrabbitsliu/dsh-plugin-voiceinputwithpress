@@ -3,3 +3,6 @@ node_modules/
 .env*
 .npmrc
 *.log
+.venv-tts/
+.local-tts/
+__pycache__/

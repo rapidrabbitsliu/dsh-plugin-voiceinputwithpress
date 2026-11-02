@@ -1,0 +1,9 @@
+# Isolated CPU-only trial, not an automatic plugin install dependency.
+# Resolve from a trusted PyPI mirror; models come separately from hf-mirror.
+kokoro-onnx==0.6.1
+# English callback reads us_gold/us_silver shipped by this same wheel.
+# Do NOT add [en], spaCy, Torch, Transformers or network G2P models.
+# Keep scripts/tts_english.py beside tts-worker.py when packaging/deploying.
+misaki-fork[zh]==0.9.6
+soundfile==0.14.0
+psutil==7.2.2
